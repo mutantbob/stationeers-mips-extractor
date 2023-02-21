@@ -8,7 +8,12 @@ edition = "2021"
 [dependencies]
 minidom="*"
 rxml="*"
+similar = "*"
 
 [[bin]]
 name="extract-mips"
 path= "src/extract-mips.rs"
+
+[[bin]]
+name="guess-diff"
+path="src/guess-diff.rs"
