@@ -83,6 +83,9 @@ impl MipsSink {
         let out_path = self.out_dir.join(format!("{}.mips", reference_id));
         let mut file = File::create(&out_path)?;
         write!(&mut file, "{}", source)?;
+        if !source.ends_with("\n") {
+            write!(&mut file, "\n")?;
+        }
         println!("wrote {:?}", out_path.to_str());
         Ok(())
     }

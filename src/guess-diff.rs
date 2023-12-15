@@ -30,6 +30,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut results: Vec<_> = game_mips
         .iter()
         .map(|mips1| (mips1, find_git_match(mips1, &git_mips)))
+        .filter(|(_path, results)| match results {
+            Err(_) => false,
+            Ok(match1) => match1.diff_count > 0,
+        })
         .collect();
 
     results.sort_by(
