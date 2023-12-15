@@ -37,21 +37,50 @@ fn main() -> Result<(), Box<dyn Error>> {
             (Err(_), Err(_)) => Ordering::Equal,
             (Err(_), Ok(_)) => Ordering::Less,
             (Ok(_), Err(_)) => Ordering::Greater,
-            (Ok((_git_file_a, a_score)), Ok((_git_file_b, b_score))) => b_score.cmp(a_score),
+            (Ok(match_a), Ok(match_b)) => match_a.diff_count.cmp(&match_b.diff_count),
         },
     );
 
-    for result in results {
-        println!("{:?}", result)
+    for (unknown, result) in results {
+        match (unknown.path().to_str(), result) {
+            (Some(file_name), Ok(match1)) => {
+                if let Some(file2_name) = match1.path {
+                    println!(
+                        "diff -uw {} {} # {} {:.0}%",
+                        file_name,
+                        file2_name,
+                        match1.diff_count,
+                        100.0 * match1.diff_frac
+                    );
+                }
+            }
+            _ => {}
+        }
     }
 
     Ok(())
 }
 
+struct Match {
+    path: Option<String>,
+    diff_count: usize,
+    diff_frac: f32,
+}
+
+impl Match {
+    pub fn new(path: Option<String>, diff_count: usize, diff_frac: f32) -> Self {
+        Self {
+            path,
+            diff_count,
+            diff_frac,
+        }
+    }
+}
+
 fn find_git_match<'a>(
     game: &'a DirEntry,
     git: &'a [(DirEntry, String)],
-) -> Result<(&'a DirEntry, usize), std::io::Error> {
+) -> Result<Match, std::io::Error> {
     let src_a = fs::read_to_string(game.path())?;
 
     let tmp = git
@@ -60,7 +89,7 @@ fn find_git_match<'a>(
         .fold(None, |a, b| match a {
             None => Some(b),
             Some(a) => {
-                if a.1 <= b.1 {
+                if a.diff_count <= b.diff_count {
                     Some(a)
                 } else {
                     Some(b)
@@ -71,16 +100,23 @@ fn find_git_match<'a>(
     Ok(tmp.unwrap())
 }
 
-fn compute_score<'a>(
-    src_a: &'_ str,
-    file_b: &'a DirEntry,
-    src_b: &'_ str,
-) -> (&'a DirEntry, usize) {
+fn compute_score<'a>(src_a: &'_ str, file_b: &'a DirEntry, src_b: &'_ str) -> Match {
     let diff = TextDiff::from_lines(src_a, src_b);
 
     let changes = diff.ops().iter().map(diff_cost).sum();
 
-    (file_b, changes)
+    let a_count = count_lines(src_a);
+    let b_count = count_lines(src_b);
+
+    Match::new(
+        file_b.path().to_str().map(|x| x.to_string()),
+        changes,
+        changes as f32 / (a_count.max(b_count) as f32),
+    )
+}
+
+fn count_lines(src_a: &str) -> usize {
+    src_a.chars().filter(|&ch| ch == '\n').count()
 }
 
 fn diff_cost(op: &DiffOp) -> usize {
