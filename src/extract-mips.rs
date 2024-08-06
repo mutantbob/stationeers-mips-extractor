@@ -1,5 +1,5 @@
 use minidom::Element;
-use rxml::{EventRead, Lexer, PullDriver, RawEvent, RawParser, RawQName};
+use rxml::{Event, GenericReader, QName};
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
@@ -36,8 +36,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if true {
-        let mut driver = PullDriver::wrap(reader, Lexer::new(), RawParser::new());
-        extract_mips(&mut driver, PathBuf::from(out_dir))?;
+        let mut r2 = rxml::Reader::new(reader);
+        extract_mips(&mut r2, PathBuf::from(out_dir))?;
     } else {
         exp1(reader)?;
     }
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 struct ThingSaveData {
     reference_id: Option<String>,
     source: Option<String>,
-    qname_stack: Vec<RawQName>,
+    qname_stack: Vec<QName>,
 }
 
 impl ThingSaveData {
@@ -83,8 +83,8 @@ impl MipsSink {
         let out_path = self.out_dir.join(format!("{}.mips", reference_id));
         let mut file = File::create(&out_path)?;
         write!(&mut file, "{}", source)?;
-        if !source.ends_with("\n") {
-            write!(&mut file, "\n")?;
+        if !source.ends_with('\n') {
+            writeln!(&mut file)?;
         }
         println!("wrote {:?}", out_path.to_str());
         Ok(())
@@ -94,29 +94,32 @@ impl MipsSink {
 //
 
 // find
-fn extract_mips(
-    driver: &mut PullDriver<BufReader<File>, RawParser>,
+fn extract_mips<R: std::io::BufRead, P: rxml::Parse<Output = rxml::Event>>(
+    driver: &mut GenericReader<R, P>,
     out_dir: PathBuf,
 ) -> Result<(), rxml::Error> {
     let mut mips_sink = MipsSink { out_dir };
     let mut ctx: Option<ThingSaveData> = None;
     println!("go");
+
     while let Some(event) = driver.read()? {
         match event {
-            RawEvent::XmlDeclaration(_, _) => {
+            Event::XmlDeclaration(_, _) => {
                 println!("{:#?}", event);
             }
-            RawEvent::ElementHeadOpen(_metrics, name) => {
+            Event::StartElement(_metrics, name, _attrs) => {
                 let name2 = name.1.clone().into_name();
-                if name2.as_str() == "ThingSaveData" {
+                let name2_str = name2.as_str();
+                // println!("<{name2_str}",);
+
+                if name2_str == "ThingSaveData" {
                     ctx = Some(Default::default())
                 } else if let Some(ctx) = &mut ctx {
                     ctx.qname_stack.push(name);
                 }
             }
-            RawEvent::Attribute(_, _, _) => {}
-            RawEvent::ElementHeadClose(_) => {}
-            RawEvent::ElementFoot(_metrics) => {
+            Event::EndElement(_) => {
+                // println!("</>");
                 if let Some(ctx2) = &mut ctx {
                     if ctx2.qname_stack.pop().is_none() {
                         ctx2.finish(&mut mips_sink);
@@ -124,7 +127,7 @@ fn extract_mips(
                     }
                 }
             }
-            RawEvent::Text(_metrics, c_data) => {
+            Event::Text(_metrics, c_data) => {
                 if let Some(ctx) = &mut ctx {
                     if let Some((_, qname)) = ctx.qname_stack.last() {
                         let qname_str = qname.as_str();
@@ -182,37 +185,7 @@ fn extract_mips(
                     }
                 }
             }
-        }
-    }
-
-    Ok(())
-}
-
-fn scan_mips(driver: &mut PullDriver<BufReader<File>, RawParser>) -> Result<(), rxml::Error> {
-    let mut path = vec![];
-    println!("go");
-    while let Some(event) = driver.read()? {
-        match event {
-            RawEvent::XmlDeclaration(_, _) => {
-                println!("{:#?}", event);
-            }
-            RawEvent::ElementHeadOpen(_metrics, name) => {
-                let name2 = name.1.clone().into_name();
-                path.push(name);
-                if name2.as_str() == "SourceCode" {
-                    println!("{}\t{:?}", name2, path);
-                }
-            }
-            RawEvent::Attribute(_, _, _) => {}
-            RawEvent::ElementHeadClose(_) => {}
-            RawEvent::ElementFoot(_metrics) => {
-                let x = path.pop();
-                if x.is_none() {
-                    println!("malfunction, popped too hard");
-                }
-            }
-            RawEvent::Text(_, _) => {}
-        }
+        };
     }
 
     Ok(())
