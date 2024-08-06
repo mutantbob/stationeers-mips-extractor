@@ -3,6 +3,13 @@ use std::cmp::Ordering;
 use std::error::Error;
 use std::fs;
 use std::fs::DirEntry;
+use std::path::Path;
+
+fn is_mips(de: &DirEntry) -> bool {
+    de.path()
+        .to_str()
+        .map_or(false, |path| path.ends_with(".mips"))
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut argv = std::env::args();
@@ -13,17 +20,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dir = fs::read_dir(mips_dir)?;
 
-    let game_mips: Vec<_> = dir.filter_map(|de| de.ok()).collect();
+    let game_mips: Vec<_> = dir
+        .filter_map(|de| de.map_or(None, |de| if is_mips(&de) { Some(de) } else { None }))
+        .collect();
 
-    let git_mips: Vec<_> = fs::read_dir(git_dir)?
-        .filter_map(|de| de.ok())
-        .filter(|de| {
-            let x = de
-                .path()
-                .to_str()
-                .map_or(false, |path| path.ends_with(".mips"));
-            x
-        })
+    let file_paths = recurse_find_mips(git_dir)?;
+    let file_paths: Vec<_> = file_paths.collect();
+    for path in file_paths.iter() {
+        println!("{:?}", path.path());
+    }
+    let git_mips: Vec<_> = file_paths
+        .into_iter()
         .filter_map(|de| fs::read_to_string(de.path()).ok().map(|str| (de, str)))
         .collect();
 
@@ -46,23 +53,47 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     for (unknown, result) in results {
-        match (unknown.path().to_str(), result) {
-            (Some(file_name), Ok(match1)) => {
-                if let Some(file2_name) = match1.path {
-                    println!(
-                        "diff -uw {} {} # {} {:.0}%",
-                        file_name,
-                        file2_name,
-                        match1.diff_count,
-                        100.0 * match1.diff_frac
-                    );
-                }
+        if let (Some(file_name), Ok(match1)) = (unknown.path().to_str(), result) {
+            if let Some(file2_name) = match1.path {
+                println!(
+                    "diff -uw {} {} # {} {:.0}%",
+                    file_name,
+                    file2_name,
+                    match1.diff_count,
+                    100.0 * match1.diff_frac
+                );
             }
-            _ => {}
         }
     }
 
     Ok(())
+}
+
+fn recurse_find_mips(
+    git_dir: impl AsRef<Path>,
+) -> Result<
+    //Filter<FilterMap<ReadDir, fn(Result<DirEntry>) -> Option<DirEntry>>, fn(&DirEntry) -> bool { is_mips }>
+    impl Iterator<Item = DirEntry>,
+    Box<dyn Error>,
+> {
+    let file_paths = fs::read_dir(git_dir)?
+        .flat_map(|de| de.ok())
+        .flat_map(|de| recurse_find_mips_of_file(de).ok())
+        .flatten();
+    Ok(file_paths)
+}
+
+fn recurse_find_mips_of_file(
+    de: DirEntry,
+) -> Result<Box<dyn Iterator<Item = DirEntry>>, Box<dyn Error>> {
+    Ok(if de.path().is_dir() {
+        let tmp: Box<dyn Iterator<Item = DirEntry>> = Box::new(recurse_find_mips(de.path())?);
+        tmp
+    } else if is_mips(&de) {
+        Box::new(std::iter::once(de))
+    } else {
+        Box::new(std::iter::empty())
+    })
 }
 
 struct Match {
@@ -104,7 +135,7 @@ fn find_git_match<'a>(
     Ok(tmp.unwrap())
 }
 
-fn compute_score<'a>(src_a: &'_ str, file_b: &'a DirEntry, src_b: &'_ str) -> Match {
+fn compute_score(src_a: &str, file_b: &DirEntry, src_b: &str) -> Match {
     let diff = TextDiff::from_lines(src_a, src_b);
 
     let changes = diff.ops().iter().map(diff_cost).sum();
