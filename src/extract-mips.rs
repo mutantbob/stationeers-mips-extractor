@@ -1,7 +1,7 @@
 use rxml::{Event, GenericReader, QName};
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Seek, Write};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::path::PathBuf;
 use zip::ZipArchive;
 
@@ -20,24 +20,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("file {}", fname);
 
     let file = File::open(&fname).unwrap_or_else(|e| panic!("cannot open {fname} for read: {e}"));
-    let mut reader = BufReader::new(file);
+    let reader = BufReader::new(file);
 
-    match SaveFormat::guess(&mut reader) {
-        SaveFormat::Xml => {
-            let mut r2 = rxml::Reader::new(reader);
-            extract_mips(&mut r2, PathBuf::from(out_dir))?;
-        }
-        SaveFormat::Zip => {
-            let mut archive = ZipArchive::new(reader)
-                .unwrap_or_else(|e| panic!("failed to parse {fname} as zip: {e}"));
-            let zip_file = archive
-                .by_name("world.xml")
-                .expect("failed to extract world.xml from zip");
-            let zip_file = BufReader::new(zip_file);
-            let mut r2 = rxml::Reader::new(zip_file);
-            extract_mips(&mut r2, PathBuf::from(out_dir))?;
-        }
-    }
+    let mut world_xml = WorldXML::from(reader);
+
+    let mut r2 = rxml::Reader::new(world_xml.world_xml());
+    extract_mips(&mut r2, PathBuf::from(out_dir))?;
 
     Ok(())
 }
@@ -213,6 +201,54 @@ impl SaveFormat {
             Self::Zip
         } else {
             Self::Xml
+        }
+    }
+}
+
+//
+
+/// This baroque mess of a helper class is because the ZipFile has a reference to the ZipArchive,
+/// so somebody has to own the ZipArchive
+enum WorldXML<R: Read> {
+    Xml(R),
+    Zip(ZipArchive<R>),
+}
+
+/*impl<R: BufRead + Seek> From<R> for WorldXML<R> {
+    fn from(mut reader: R) -> Self {
+        match SaveFormat::guess(&mut reader) {
+            SaveFormat::XML => Self::XML(reader),
+            SaveFormat::Zip => {
+                let archive = ZipArchive::new(reader).expect(&format!("failed to parse as zip"));
+                Self::Zip(archive)
+            }
+        }
+    }
+}*/
+
+impl<R: BufRead + Seek> From<R> for WorldXML<R> {
+    fn from(mut reader: R) -> Self {
+        match SaveFormat::guess(&mut reader) {
+            SaveFormat::Xml => Self::Xml(reader),
+            SaveFormat::Zip => {
+                let archive = ZipArchive::new(reader).expect("Can not parse zip archive");
+                Self::Zip(archive)
+            }
+        }
+    }
+}
+
+impl<R: BufRead + Seek> WorldXML<R> {
+    pub fn world_xml<'a>(&'a mut self) -> Box<dyn BufRead + 'a> {
+        match self {
+            Self::Xml(r) => Box::new(r),
+            Self::Zip(archive) => {
+                let zip_file = archive
+                    .by_name("world.xml")
+                    .expect("failed to extract world.xml from zip");
+                let zip_file = BufReader::new(zip_file);
+                Box::new(zip_file)
+            }
         }
     }
 }
