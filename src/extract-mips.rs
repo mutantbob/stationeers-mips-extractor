@@ -2,8 +2,9 @@ use minidom::Element;
 use rxml::{Event, GenericReader, QName};
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::path::PathBuf;
+use zip::ZipArchive;
 
 /// parse a Stationeers world file and extract all the MISP routines from the IC10 objects
 /// c:\\Users\\*\\Documents\\My Games\\Stationeers\\saves\\*\\world.xml
@@ -19,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("file {}", fname);
 
-    let mut file = File::open(fname)?;
+    let mut file = File::open(&fname).expect(&format!("cannot open {fname} for read"));
     if false {
         let mut buf = [0; 16];
         let x = file.read(&mut buf);
@@ -35,11 +36,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:#?}", buf);
     }
 
-    if true {
-        let mut r2 = rxml::Reader::new(reader);
-        extract_mips(&mut r2, PathBuf::from(out_dir))?;
-    } else {
-        exp1(reader)?;
+    match SaveFormat::guess(&mut reader) {
+        SaveFormat::XML => {
+            let mut r2 = rxml::Reader::new(reader);
+            extract_mips(&mut r2, PathBuf::from(out_dir))?;
+        }
+        SaveFormat::Zip => {
+            let mut archive =
+                ZipArchive::new(reader).expect(&format!("failed to parse {fname} as zip"));
+            let zip_file = archive
+                .by_name("world.xml")
+                .expect("failed to extract world.xml from zip");
+            let zip_file = BufReader::new(zip_file);
+            let mut r2 = rxml::Reader::new(zip_file);
+            extract_mips(&mut r2, PathBuf::from(out_dir))?;
+        }
     }
 
     Ok(())
@@ -81,7 +92,12 @@ struct MipsSink {
 impl MipsSink {
     pub(crate) fn accept(&self, reference_id: &str, source: &str) -> Result<(), std::io::Error> {
         let out_path = self.out_dir.join(format!("{}.mips", reference_id));
-        let mut file = File::create(&out_path)?;
+        let mut file = File::create(&out_path).map_err(|e| {
+            std::io::Error::other(format!(
+                "Unable to open {} for write: {e}",
+                out_path.display()
+            ))
+        })?;
         write!(&mut file, "{}", source)?;
         if !source.ends_with('\n') {
             writeln!(&mut file)?;
@@ -197,6 +213,28 @@ fn exp1(reader: BufReader<File>) -> Result<(), minidom::Error> {
 
     println!("{:#?}", root);
     Ok(())
+}
+
+enum SaveFormat {
+    XML,
+    Zip,
+}
+
+impl SaveFormat {
+    pub fn guess<R: BufRead + Seek>(mut r: R) -> Self {
+        let mut magic = [0; 2];
+        if let Err(..) = r.read_exact(&mut magic) {
+            return Self::XML;
+        };
+        r.seek(std::io::SeekFrom::Start(0))
+            .expect("failed to seek to start");
+
+        if &magic == b"PK" {
+            Self::Zip
+        } else {
+            Self::XML
+        }
+    }
 }
 
 #[cfg(test)]

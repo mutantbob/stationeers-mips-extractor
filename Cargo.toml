@@ -9,6 +9,7 @@ edition = "2021"
 minidom = "*"
 rxml = "*"
 similar = "*"
+zip = "*"
 
 [[bin]]
 name = "extract-mips"
