@@ -65,7 +65,7 @@ impl ThingSaveData {
         if let Some(source) = &self.source {
             if let Some(reference_id) = &self.reference_id {
                 if let Err(e) = mips_sink.accept(reference_id, source) {
-                    println!("{:?}", e);
+                    println!("malfunction in finish {:?}", e);
                 }
             }
         }
@@ -198,3 +198,6 @@ fn exp1(reader: BufReader<File>) -> Result<(), minidom::Error> {
     println!("{:#?}", root);
     Ok(())
 }
+
+#[cfg(test)]
+mod test;

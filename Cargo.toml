@@ -6,14 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-minidom="*"
-rxml="*"
+minidom = "*"
+rxml = "*"
 similar = "*"
 
 [[bin]]
-name="extract-mips"
-path= "src/extract-mips.rs"
+name = "extract-mips"
+path = "src/extract-mips.rs"
 
 [[bin]]
-name="guess-diff"
-path="src/guess-diff.rs"
+name = "guess-diff"
+path = "src/guess-diff.rs"
+
+[[bin]]
+name = "modular-guesser"
+path = "src/modular-guesser.rs"
