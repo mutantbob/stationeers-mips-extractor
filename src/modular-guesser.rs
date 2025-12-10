@@ -41,8 +41,7 @@ pub fn main() {
 
 fn guess_modulus(hashes: &[i32]) {
     for modulus in hashes.len().. {
-        let slots =
-            count_modulus_hash2(&hashes, modulus, |x| x.rem_euclid(modulus as i32) as usize);
+        let slots = count_modulus_hash2(hashes, modulus, |x| x.rem_euclid(modulus as i32) as usize);
         if !has_collision(&slots) {
             println!("{modulus} for {}", hashes.len());
             return;
@@ -55,7 +54,7 @@ fn guess_modulus(hashes: &[i32]) {
 fn guess_modulus2(hashes: &[i32]) {
     for modulus1 in hashes.len().. {
         for modulus2 in hashes.len()..=modulus1 {
-            let slots = count_modulus_hash2(&hashes, modulus2, |x| {
+            let slots = count_modulus_hash2(hashes, modulus2, |x| {
                 let stage1 = x.rem_euclid(modulus1 as i32) as usize;
                 stage1.rem_euclid(modulus2)
             });
@@ -67,15 +66,6 @@ fn guess_modulus2(hashes: &[i32]) {
             }
         }
     }
-}
-
-fn count_modulus_hash(raw: &[i32], modulus: i32) -> Vec<u16> {
-    let mut rval = vec![0; modulus as usize];
-    for &x in raw {
-        let slot = x.rem_euclid(modulus);
-        rval[slot as usize] += 1;
-    }
-    rval
 }
 
 fn count_modulus_hash2(raw: &[i32], slot_count: usize, modulus: impl Fn(i32) -> usize) -> Vec<u16> {

@@ -1,8 +1,7 @@
-use minidom::Element;
 use rxml::{Event, GenericReader, QName};
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, Write};
+use std::io::{BufRead, BufReader, Seek, Write};
 use std::path::PathBuf;
 use zip::ZipArchive;
 
@@ -20,30 +19,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("file {}", fname);
 
-    let mut file = File::open(&fname).expect(&format!("cannot open {fname} for read"));
-    if false {
-        let mut buf = [0; 16];
-        let x = file.read(&mut buf);
-        println!("{:#?}", x);
-        println!("{:#?}", buf);
-    }
+    let file = File::open(&fname).unwrap_or_else(|e| panic!("cannot open {fname} for read: {e}"));
     let mut reader = BufReader::new(file);
 
-    if false {
-        let mut buf = [0; 16];
-        let x = reader.read(&mut buf);
-        println!("{:#?}", x);
-        println!("{:#?}", buf);
-    }
-
     match SaveFormat::guess(&mut reader) {
-        SaveFormat::XML => {
+        SaveFormat::Xml => {
             let mut r2 = rxml::Reader::new(reader);
             extract_mips(&mut r2, PathBuf::from(out_dir))?;
         }
         SaveFormat::Zip => {
-            let mut archive =
-                ZipArchive::new(reader).expect(&format!("failed to parse {fname} as zip"));
+            let mut archive = ZipArchive::new(reader)
+                .unwrap_or_else(|e| panic!("failed to parse {fname} as zip: {e}"));
             let zip_file = archive
                 .by_name("world.xml")
                 .expect("failed to extract world.xml from zip");
@@ -207,24 +193,18 @@ fn extract_mips<R: std::io::BufRead, P: rxml::Parse<Output = rxml::Event>>(
     Ok(())
 }
 
-/// fails with MissingNamespace
-fn exp1(reader: BufReader<File>) -> Result<(), minidom::Error> {
-    let root: Element = Element::from_reader(reader)?;
-
-    println!("{:#?}", root);
-    Ok(())
-}
+//
 
 enum SaveFormat {
-    XML,
+    Xml,
     Zip,
 }
 
 impl SaveFormat {
     pub fn guess<R: BufRead + Seek>(mut r: R) -> Self {
         let mut magic = [0; 2];
-        if let Err(..) = r.read_exact(&mut magic) {
-            return Self::XML;
+        if r.read_exact(&mut magic).is_err() {
+            return Self::Xml;
         };
         r.seek(std::io::SeekFrom::Start(0))
             .expect("failed to seek to start");
@@ -232,7 +212,7 @@ impl SaveFormat {
         if &magic == b"PK" {
             Self::Zip
         } else {
-            Self::XML
+            Self::Xml
         }
     }
 }
